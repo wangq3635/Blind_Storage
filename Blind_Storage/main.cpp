@@ -26,6 +26,10 @@
 #define BS_BLOCK_HASH_SIZE 32
 #define CIPHER_BLOCK_SIZE 16
 #define BS_BLOCK_NUMBER 65536
+#define KAPPA 45
+#define ALPHA 4
+
+#define max(a, b)  (((a) > (b)) ? (a) : (b)) 
 
 using namespace std;
 using namespace CryptoPP;
@@ -419,17 +423,21 @@ class bstore
 			switch (op)
 			{
 				case 0:
-					cout << "Reading file" << endl;
+					cout << "[Reading file]" << endl;
 					read(id, dest_dec_file_name);
 					break;
 
 				case 1:
+					cout << "[Writing file]" << endl;
 					break;
 
 				case 2:
+					cout << "[Updating file]" << endl;
+					updata(id);
 					break;
 
 				case 3:
+					cout << "[Deleting file]" << endl;
 					break;
 
 				default:
@@ -443,20 +451,20 @@ class bstore
 
 		void read(string  id, string dest_dec_file_name) // id is the file name you want to READ
 		{
-			/* Generate a seed by file id which is you want to access */
+			/* Generate a seed by file id which is you want to read */
 			string hash = sha256(id);
 			string seed = FD_PRF(key_Phi, 16, id);
 			byte seed_byte[16] = { 0x00 };
 			string_to_byte(seed_byte, seed, 16);
-			/* Generate a seed by file id which is you want to access */
+			/* Generate a seed by file id which is you want to read */
 
 			/* Generate a pseudorandom subset S_f_0 with size kappa which is a subset of D */
 			byte *random;
-			int kappa = 45;
+			int kappa = KAPPA;
 			int random_size = 2 * kappa; // numbers of output is (random_size / 2)
 			random = new byte[random_size];
 			unsigned short int *random_subset = parse_2bytes_sequence(seed_byte, sizeof(seed_byte), random, random_size);
-			cout << "Generate a pseudorandom subset S_f_0 with size " << kappa << " for " << id << endl;
+			//cout << "Generate a pseudorandom subset S_f_0 with size " << kappa << " for " << id << endl;
 			/* Generate a pseudorandom subset S_f_0 with size kappa which is a subset of D */
 
 			bs_data dec_D[1]; // as a buffer
@@ -546,7 +554,7 @@ class bstore
 					}
 					else if (block_number == 1)
 					{
-						cout << "DEBUG: This block has " << padding_number << " bytes padding data" << endl;
+						//cout << "DEBUG: This block has " << padding_number << " bytes padding data" << endl;
 						dest_dec_file.write(array_op_ptr + sizeof(dec_D->size) + sizeof(dec_D->hash), BS_BLOCK_DATA_SIZE - padding_number); // write decryption data to the destination file
 						cout << "Output file: " << dest_dec_file_name << endl << endl;
 						dest_dec_file.close();
@@ -567,9 +575,7 @@ class bstore
 			if (block_number > 1)
 			{
 				/* Generate a pseudorandom subset S_f with size max(alpha * size_f, kappa) which is a subset of D */
-				byte *random;
-				int alpha = 4;
-				random_size = alpha * (2 * block_number); // numbers of output is (random_size / 2)
+				random_size = ALPHA * (2 * block_number); // numbers of output is (random_size / 2)
 				random = new byte[random_size];
 				random_subset = parse_2bytes_sequence(seed_byte, sizeof(seed_byte), random, random_size);
 				int output_number = random_size / 2;
@@ -632,7 +638,7 @@ class bstore
 							read_record[index] = 1;
 							if (dec_counter == block_number)
 							{
-								cout << "DEBUG: This block has " << padding_number << " bytes padding data" << endl;
+								//cout << "DEBUG: This block has " << padding_number << " bytes padding data" << endl;
 								dest_dec_file.write(array_op_ptr + sizeof(dec_D->size) + sizeof(dec_D->hash), BS_BLOCK_DATA_SIZE - padding_number);
 							}
 							else
@@ -659,6 +665,161 @@ class bstore
 				cout << "Output file: " << dest_dec_file_name << endl << endl;
 				dest_dec_file.close();
 			}
+		}
+
+		void write(string id)
+		{
+
+		}
+
+		void updata(string id)
+		{
+			/* Generate a seed by file id which is you want to update */
+			string hash = sha256(id);
+			string seed = FD_PRF(key_Phi, 16, id);
+			byte seed_byte[16] = { 0x00 };
+			string_to_byte(seed_byte, seed, 16);
+			/* Generate a seed by file id which is you want to update */
+
+			/* Generate a pseudorandom subset S_f_0 with size kappa which is a subset of D */
+			byte *random;
+			int kappa = KAPPA;
+			int random_size = 2 * kappa; // numbers of output is (random_size / 2)
+			random = new byte[random_size];
+			unsigned short int *random_subset = parse_2bytes_sequence(seed_byte, sizeof(seed_byte), random, random_size);
+			cout << "Generate a pseudorandom subset S_f_0 with size " << kappa << " for " << id << endl;
+			/* Generate a pseudorandom subset S_f_0 with size kappa which is a subset of D */
+
+			bs_data dec_D[1]; // as a buffer
+			int index; // index in D
+			string ver_str, IV_str, index_str, cipher;
+			byte cipher_byte[16];
+
+			char read_record[BS_BLOCK_NUMBER] = { 0 }; // to deal with collision; every block must be read once for a file
+
+			char *array_op_ptr = (char*)dec_D; // change the pointer type to operate each byte
+						
+			fstream src_enc_file, src_new_file;
+			char src_enc_file_name[32] = { 0 };
+
+			int padding_number = 0; // to count the padding data
+			char check_flag = 0x80; // padding headder
+			int old_block_number = 0, new_block_number = 0; // old: size_f, new: size_f'
+			int version = 0;
+			int dec_counter = 0; //to count the numbers of block which is decrypted
+			long long length; // to calculate the new file size
+
+			int L = 0; // the new subset size after update, i.e., L = ALPHA * max(old_block_number, new_block_number)
+
+			/* Search file id in subset S_f_0 */
+			cout << "Searching " << id << "...";
+			for (int i = 0; i < kappa; i++)
+			{
+				cout << "...";
+
+				sprintf(src_enc_file_name, "EncData\\D[%d].enc", random_subset[i]);
+				//cout << "Open " << src_enc_file_name << endl;
+
+				src_enc_file.open(src_enc_file_name, ios::in | ios::binary);
+				if (!src_enc_file)
+					cerr << "Source encryption file open failed." << endl << endl;
+				src_enc_file.read(array_op_ptr, sizeof(bs_data)); // read encryption file to buffer
+				src_enc_file.close();
+
+				//cout << "DEBUG: Version number of block D[" << random_subset[i] << "]: " << dec_D[0].version_number << endl;
+
+				ver_str = ver_str.assign((char*)(array_op_ptr + sizeof(bs_data) - sizeof(int)), sizeof(int)); // read D[i].version_number and transform it to string
+				index = random_subset[i];
+				index_str = index_str.assign((char*)&index, sizeof(index));
+				IV_str = index_str + ver_str; // version number || index of D, || is concatenation
+
+				padding_number = 0; // to count the padding data
+				old_block_number = 0; // size_f
+				check_flag = 0x80; // padding headder
+
+				/* firsst decryption */
+				for (int j = 0; j < sizeof(bs_data) - sizeof(int); j++)
+				{
+					if (j % CIPHER_BLOCK_SIZE == 0) // counter for each block in one D
+					{
+						IV_str.replace(2, 1, 1, (j / CIPHER_BLOCK_SIZE)); // string.replace(x, 1, 1, y): replace position x with y, as a block counter
+						cipher = PRF(key_Phi, sizeof(key_Phi), IV_str);
+						string_to_byte(cipher_byte, cipher, cipher.size());
+					}
+					*(array_op_ptr + j) = *(array_op_ptr + j) ^ cipher_byte[j % CIPHER_BLOCK_SIZE];
+
+					/* count padding bytes */
+					if (*(array_op_ptr + j) == check_flag) // padding data
+					{
+						padding_number++;
+						check_flag = 0x00;
+					}
+					else
+					{
+						padding_number = 0;
+						check_flag = 0x80;
+					}
+					/* count padding bytes */
+				}
+				/* first decryption */
+
+				if (strncmp(hash.c_str(), dec_D[0].hash, BS_BLOCK_HASH_SIZE) == 0)
+				{
+					dec_counter++; // coute the numbers of decryption blocks actually for a file
+					read_record[index] = 1; // mark that D[index] already was read
+					old_block_number = dec_D[0].size;
+					version = dec_D[0].version_number;
+					cout << "\nThe old file occupies " << old_block_number << " block(s)" << endl;
+					break;
+				}
+			}
+			delete[](random);
+
+			if (old_block_number == 0)
+			{
+				cout << "\nCan not updata file: " << id << " doesn't exist" << endl << endl;
+				return;
+			}
+			/* Search file id in subset S_f_0 */
+			
+			else
+			{
+				src_new_file.open(id, ios::in | ios::binary);
+				if (!src_new_file)
+				{
+					cerr << "New source file: " << id << " open failed..." << endl << endl;
+				}
+
+				/* Calculate file size (bytes) */
+				src_new_file.seekg(0, ios::end);
+				length = src_new_file.tellg(); // the size of the file
+				src_new_file.seekg(0, ios::beg);
+				cout << "New source file: " << id << " is " << length << " bytes." << endl;
+				/* Calculate file size (bytes) */
+
+				/* Calculate the number of blocks in an encoding data */
+				new_block_number = (length / BS_BLOCK_DATA_SIZE);
+				if (length % BS_BLOCK_DATA_SIZE != 0)
+					new_block_number++;
+				cout << "Numbers of block will use for NEW " << id << ": " << new_block_number << endl;
+				/* Calculate the number of blocks in an encoding data */
+			}
+
+			L = ALPHA * max(old_block_number, new_block_number);
+
+			/* Generate a pseudorandom subset S_f with size L which is a subset of D */
+			random_size = 2 * L; // numbers of output is (random_size / 2)
+			random = new byte[random_size];
+			random_subset = parse_2bytes_sequence(seed_byte, sizeof(seed_byte), random, random_size);
+			cout << "Generate a pseudorandom subset S_f with size " << L << " for NEW " << id << endl;
+			/* Generate a pseudorandom subset S_f with size L which is a subset of D */
+			
+			delete[](random);
+		}
+
+		void del(string id)
+		{
+
 		}
 };
 
@@ -689,8 +850,9 @@ int main()
 
 	for (int i = 0; i < 5; i++)
 	{
-		bstore_obj.access(file_name[i], 0);
+		//bstore_obj.access(file_name[i], 0);
 	}
+	bstore_obj.access(file_name[2], 2);
 
 	cout << fixed << setprecision(16) << "Encryption time: " << times << 's' << endl; // Show the building time
 
