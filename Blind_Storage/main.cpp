@@ -1445,6 +1445,61 @@ class bstore
 		}
 };
 
+class dsse : public bstore
+{
+	public:
+		void indexgen(string keyword)
+		{
+			fstream index;
+			string file_list;
+			index.open("Index\\" + keyword, ios::out | ios::binary);
+			
+			cout << "Please enter the file name that contains the KEYWORD: " << keyword << endl;
+			cout << "If you enter finished, enter \"EXIT\"" << endl;
+			while (1)
+			{
+				cin >> file_list;
+				if (file_list == "EXIT")
+				{
+					index.close();
+					break;
+				}
+				index << file_list << endl;
+				access(file_list, 1);
+			}
+			cout << "Upload to server" << endl;
+			access("Index\\" + keyword, 1);
+		}
+
+		void remove()
+		{
+
+		}
+
+		void add()
+		{
+
+		}
+
+		void search(string keyword)
+		{	
+			char buf[16] = { 0 };
+			fstream index;
+			string file_list[3];
+			index.open("Index\\" + keyword, ios::in | ios::binary);
+			for (int i = 0; i < 3; i++)
+			{
+				index.getline(buf, sizeof(buf));
+				file_list[i] = buf;
+				cout << file_list[i] << endl;
+			}
+		}
+
+	private:
+		byte key_Phi[16]; // key for PRF
+		byte key_ID[16]; // key for FD_PRF
+};
+
 
 int main()
 {
@@ -1452,8 +1507,11 @@ int main()
 	double times;
 
 	bstore bstore_obj;
+	dsse dsse_obj;
+
 	string file_name[5];
 	string prefix = "DEC_";
+	string keyword;
 
 	file_name[0] = "RFC4493.txt";
 	file_name[1] = "RFC4615.txt";
@@ -1461,6 +1519,7 @@ int main()
 	file_name[4] = "WindMD5.exe";
 	
 	bstore_obj.keygen();
+	dsse_obj.keygen();
 
 	int opcode, list_id;
 
@@ -1471,27 +1530,29 @@ int main()
 		QueryPerformanceFrequency(&fre); //取得CPU頻率
 		QueryPerformanceCounter(&startTime); //取得開機到現在經過幾個CPU Cycle
 		
-		if (opcode != 5)
-		{
-			cout << "Enter the operand target: " << endl;
-			cin >> list_id;
-		}
-
 		switch (opcode)
 		{
 			case 0:
-				bstore_obj.access(file_name[list_id], opcode);
+				cout << "Enter file name " << endl;
+				cin >> file_name[3];
+				bstore_obj.access(file_name[3], opcode);
 				break;
 
 			case 1:
+				cout << "Enter the operand target: " << endl;
+				cin >> list_id;
 				bstore_obj.access(file_name[list_id], opcode);
 				break;
 
 			case 2:
+				cout << "Enter the operand target: " << endl;
+				cin >> list_id;
 				bstore_obj.access(file_name[list_id], opcode);
 				break;
 
 			case 3:
+				cout << "Enter the operand target: " << endl;
+				cin >> list_id;
 				bstore_obj.access(file_name[list_id], opcode);
 				break;
 
@@ -1505,6 +1566,18 @@ int main()
 				{
 					cout << "	" << i << ": " << file_name[i] << endl;
 				}
+				break;
+
+			case 6:
+				cout << "Please enter the keyword for generate index" << endl;
+				cin >> keyword;
+				dsse_obj.indexgen(keyword);
+				break;
+
+			case 7:
+				cout << "Please enter the keyword for search" << endl;
+				cin >> keyword;
+				dsse_obj.search(keyword);
 				break;
 
 			default:
