@@ -423,21 +423,23 @@ class bstore
 			switch (op)
 			{
 				case 0:
-					cout << "[Reading file]" << endl;
+					cout << "[Reading file]: \"" << id << "\"" << endl;
 					read(id, dest_dec_file_name);
 					break;
 
 				case 1:
-					cout << "[Writing file]" << endl;
+					cout << "[Writing file]: \"" << id << "\"" << endl;
+					write(id);
 					break;
 
 				case 2:
-					cout << "[Updating file]" << endl;
+					cout << "[Updating file]: \"" << id << "\"" << endl;
 					update(id);
 					break;
 
 				case 3:
-					cout << "[Deleting file]" << endl;
+					cout << "[Deleting file]: \"" << id << "\"" << endl;
+					del(id);
 					break;
 
 				default:
@@ -471,7 +473,10 @@ class bstore
 			string ver_str, IV_str, index_str, cipher;
 			byte cipher_byte[16];
 
-			char read_record[BS_BLOCK_NUMBER] = { 0 }; // to deal with collision; every block must be read once for a file
+			//char read_record[BS_BLOCK_NUMBER] = { 0 }; // to deal with collision; every block must be read once for a file
+			char *read_record = new char[BS_BLOCK_NUMBER];
+			memset(read_record, 0, BS_BLOCK_NUMBER);
+
 
 			char *array_op_ptr = (char*)dec_D; // change the pointer type to operate each byte
 
@@ -668,7 +673,7 @@ class bstore
 
 		void write(string id)
 		{
-
+			
 		}
 
 		void update(string id)
@@ -686,11 +691,10 @@ class bstore
 			random = new byte[random_size];
 			unsigned short int *random_subset = parse_2bytes_sequence(seed_byte, sizeof(seed_byte), random, random_size);
 			cout << "Generate a pseudorandom subset S_f_0 with size " << KAPPA << " for " << id << endl;
-			
-			for (int i = 0; i < KAPPA; i++)
+			/*for (int i = 0; i < KAPPA; i++)
 			{
 				cout << "random_subset[" << i <<"] = "<< random_subset[i] << endl;
-			}
+			}*/
 			
 			/* Generate a pseudorandom subset S_f_0 with size kappa which is a subset of D */
 
@@ -699,7 +703,9 @@ class bstore
 			string ver_str, IV_str, index_str, cipher;
 			byte cipher_byte[16];
 
-			char read_record[BS_BLOCK_NUMBER] = { 0 }; // to deal with collision; every block must be read once for a file
+			//char read_record[BS_BLOCK_NUMBER] = { 0 }; // to deal with collision; every block must be read once for a file
+			char *read_record = new char[BS_BLOCK_NUMBER];
+			memset(read_record, 0, BS_BLOCK_NUMBER);
 
 			char *array_op_ptr = (char*)dec_D; // change the pointer type to operate each byte
 						
@@ -713,7 +719,7 @@ class bstore
 			long long length; // to calculate the new file size
 
 			int L = 0; // the new subset size after update, i.e., L = ALPHA * max(old_block_number, new_block_number)
-			int read_count; // count the actually read byte
+			int read_count = 0; // count the actually read byte
 			int first_index = 0; // to record the first block index for a file
 
 			/* Search file id in subset S_f_0 */
@@ -794,13 +800,27 @@ class bstore
 			}
 
 			L = ALPHA * max(old_block_number, new_block_number);
-			int update_i = first_index;
+			
 			char free[BS_BLOCK_HASH_SIZE] = { 0 }; // for checking whether D[random_subset[write_i]] is free or not
-			if (L <= KAPPA) // let the subset S_f = S_f_0
+			if (L > KAPPA)
 			{				
-				while (!src_new_file.eof())
+				delete[](random);
+
+				/* Generate a pseudorandom subset S_f with size L which is a subset of D */
+				random_size = 2 * L; // numbers of output is (random_size / 2)
+				random = new byte[random_size];
+				random_subset = parse_2bytes_sequence(seed_byte, sizeof(seed_byte), random, random_size);
+				cout << "Generate a pseudorandom subset S_f with size " << L << " for NEW " << id << endl;
+				/* Generate a pseudorandom subset S_f with size L which is a subset of D */				
+			}
+			//else 
+				// let the subset S_f = S_f_0
+			int update_i = first_index;
+			while (!src_new_file.eof())
+			{
+				index = random_subset[update_i];
+				if (read_record[index] == 0)
 				{
-					index = random_subset[update_i];
 					sprintf(src_enc_file_name, "EncData\\D[%d].enc", index);
 					cout << "DEBUG: Open " << src_enc_file_name << endl;
 					src_enc_file.open(src_enc_file_name, ios::in | ios::binary);
@@ -828,10 +848,11 @@ class bstore
 						*(array_op_ptr + j) = *(array_op_ptr + j) ^ cipher_byte[j % CIPHER_BLOCK_SIZE];
 					}
 					/* decryption hash header */
-										
+
 					if (strncmp(hash.c_str(), dec_D[0].hash, BS_BLOCK_HASH_SIZE) == 0 || strncmp(free, dec_D[0].hash, BS_BLOCK_HASH_SIZE) == 0) // check D[index] belong to file id or free
 					{
 						dec_counter++;
+						read_record[index] = 1; // mark that D[index] already was read
 						/* Update data */
 						dec_D[0].version_number++; // incrementing version number
 						if (dec_counter == 1) // first block
@@ -842,7 +863,7 @@ class bstore
 						{
 							dec_D[0].size = 0;
 						}
-						string_to_byte((byte*)&(dec_D[0].hash), hash, BS_BLOCK_HASH_SIZE); // write hash(id)
+						string_to_byte((byte*)(dec_D[0].hash), hash, BS_BLOCK_HASH_SIZE); // write hash(id)
 						src_new_file.read(dec_D[0].data, BS_BLOCK_DATA_SIZE); // update data to buffer for D[index]
 						read_count = src_new_file.gcount(); // the actual read byte
 						if (read_count != BS_BLOCK_DATA_SIZE) // for padding the last block 
@@ -864,7 +885,7 @@ class bstore
 						ver_str = ver_str.assign((char*)(array_op_ptr + sizeof(bs_data) - sizeof(int)), sizeof(int)); // read D[i].version_number and transform it to string
 						index_str = index_str.assign((char*)&index, sizeof(index));
 						IV_str = index_str + ver_str; // version number || index of D, || is concatenation
-						
+
 						for (int j = 0; j < sizeof(bs_data) - sizeof(int); j++)
 						{
 							if (j % CIPHER_BLOCK_SIZE == 0)
@@ -888,16 +909,22 @@ class bstore
 					}
 					/*else // collision for a file
 					{
-						cout << "DEBUG: This black is not free" << endl;
+					cout << "DEBUG: This black is not free" << endl;
 					}*/
 					update_i++;
 				}
-				
-				/* If the old_block_number > new_block_number, the unnecessary blocks need to be mark as free */
-				while (dec_counter < old_block_number)
+				else
 				{
-					
-					index = random_subset[update_i];
+					update_i++;
+				}
+			}
+
+			/* If the old_block_number > new_block_number, the unnecessary blocks need to be mark as free */
+			while (dec_counter < old_block_number)
+			{
+				index = random_subset[update_i];
+				if (read_record[index] == 0)
+				{
 					sprintf(src_enc_file_name, "EncData\\D[%d].enc", index);
 					//cout << "DEBUG: Open " << src_enc_file_name << endl;
 					src_enc_file.open(src_enc_file_name, ios::in | ios::binary);
@@ -966,73 +993,85 @@ class bstore
 					}
 					/*else
 					{
-						cout << "DEBUG: D[" << index << "] is NOT a block for " << id << endl;
+					cout << "DEBUG: D[" << index << "] is NOT a block for " << id << endl;
 					}*/
 					update_i++;
 				}
-				/* If the old_block_number > new_block_number, the unnecessary blocks need to be mark as free */
-				delete[](random);
-
-				
+				else
+				{
+					update_i++;
+				}
 			}
-			else
-			{
-				delete[](random);
-				/* Generate a pseudorandom subset S_f with size L which is a subset of D */
-				random_size = 2 * L; // numbers of output is (random_size / 2)
-				random = new byte[random_size];
-				random_subset = parse_2bytes_sequence(seed_byte, sizeof(seed_byte), random, random_size);
-				cout << "Generate a pseudorandom subset S_f with size " << L << " for NEW " << id << endl;
-				/* Generate a pseudorandom subset S_f with size L which is a subset of D */
-				delete[](random);
-			}
+			/* If the old_block_number > new_block_number, the unnecessary blocks need to be mark as free */
+			delete[](random);
 		}
 
 		void del(string id)
 		{
-
+			
 		}
 };
 
 
 int main()
 {
-
 	LARGE_INTEGER startTime, endTime, fre;
 	double times;
-
 
 	bstore bstore_obj;
 	string file_name[5];
 	string prefix = "DEC_";
+
 	file_name[0] = "RFC4493.txt";
 	file_name[1] = "RFC4615.txt";
 	file_name[2] = "Test.txt";
 	file_name[4] = "WindMD5.exe";
+	
 	bstore_obj.keygen();
-	int opcode;
-	cout << "Enter OP code :" << endl;
-	cout << "0 : read, 1 : write, 2 : update, 3 : delete, Ctrl + Z: exit" << endl;
-	//bstore_obj.build(file_name, 5);
+
+	int opcode, list_id;
+
+	cout << "Enter OP code:" << endl;
+	cout << "0: read, 1: write, 2: update, 3: delete, 4: build, 5: show the file set" << endl << "Ctrl + Z: exit" << endl;
 	while (cin >> opcode)
 	{
 		QueryPerformanceFrequency(&fre); //取得CPU頻率
 		QueryPerformanceCounter(&startTime); //取得開機到現在經過幾個CPU Cycle
+		
+		if (opcode != 5)
+		{
+			cout << "Enter the operand target: " << endl;
+			cin >> list_id;
+		}
 
 		switch (opcode)
 		{
 			case 0:
-				bstore_obj.access(file_name[2], 0);
+				bstore_obj.access(file_name[list_id], opcode);
 				break;
 
 			case 1:
+				bstore_obj.access(file_name[list_id], opcode);
 				break;
 
 			case 2:
-				bstore_obj.access(file_name[2], 2);
+				bstore_obj.access(file_name[list_id], opcode);
 				break;
 
 			case 3:
+				bstore_obj.access(file_name[list_id], opcode);
+				break;
+
+			case 4:
+				
+				break;
+
+			case 5:
+				cout << "The file set: " << endl;
+				for (int i = 0; i < 5; i++)
+				{
+					cout << i << ": " << file_name[i] << endl;
+				}
 				break;
 
 			default:
