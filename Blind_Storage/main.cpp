@@ -765,7 +765,8 @@ class bstore
 
 			if (old_block_number != 0)
 			{
-				cout << "The file: " << id << " has existed" << endl << "Please use \"Update\"" << endl << endl;
+				cout << "The file: " << id << " has existed" << endl << "Change to use \"Update\"" << endl << endl;
+				update(id);
 				return;
 			}
 			/* Search file id in subset S_f_0 */
@@ -1466,32 +1467,61 @@ class dsse : public bstore
 				}
 				index << file_list << endl;
 				access(file_list, 1);
+				cout << "Please enter the file name that contains the KEYWORD: " << keyword << endl;
+				cout << "If you enter finished, enter \"EXIT\"" << endl;
 			}
 			cout << "Upload to server" << endl;
 			access("Index\\" + keyword, 1);
 		}
 
-		void remove()
+		void remove(string id)
 		{
-
+			access(id, 3);
 		}
 
-		void add()
+		void add(string id)
 		{
-
+			string keyword;
+			fstream index;
+			access(id, 1);
+			cout << "Enter the keyword for file " << id << endl;
+			cout << "If you enter finished, enter \"EXIT\"" << endl;
+			while (1)
+			{
+				cin >> keyword;
+				if (keyword == "EXIT")
+				{
+					break;
+				}
+				access("Index\\" + keyword, 0);
+				index.open("Index\\" + keyword, ios::app | ios::binary);
+				index << id << endl;
+				index.close();
+				cout << "Enter the keyword for file " << id << endl;
+				cout << "If you enter finished, enter \"EXIT\"" << endl;
+			}
+			cout << "Upload to server" << endl;
+			access("Index\\" + keyword, 2);
 		}
 
 		void search(string keyword)
 		{	
 			char buf[16] = { 0 };
 			fstream index;
-			string file_list[3];
-			index.open("Index\\" + keyword, ios::in | ios::binary);
-			for (int i = 0; i < 3; i++)
+			string file_list[10];
+			int index_number = 0;
+			access("Index\\" + keyword, 0);
+			index.open("DEC_Index\\" + keyword, ios::in | ios::binary);
+			while (!index.eof())
 			{
 				index.getline(buf, sizeof(buf));
-				file_list[i] = buf;
-				cout << file_list[i] << endl;
+				file_list[index_number] = buf;
+				cout << file_list[index_number] << endl;
+				index_number++;
+			}
+			for (int i = 0; i < index_number - 1; i++)
+			{
+				access(file_list[i], 0);
 			}
 		}
 
